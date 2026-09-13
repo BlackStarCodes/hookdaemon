@@ -1,4 +1,4 @@
-  repos:
+repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -6,11 +6,23 @@
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-toml
+      - id: check-json
       - id: check-added-large-files
         args: ["--maxkb=500"]
       - id: check-merge-conflict
       - id: mixed-line-ending
         args: ["--fix=lf"]
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ["--baseline", ".secrets.baseline"]
+        exclude: |
+          (?x)^(
+            uv\.lock|
+            \.secrets\.baseline
+          )$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.7
@@ -19,12 +31,12 @@
         args: ["--fix"]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.3.1
+  - repo: local
     hooks:
       - id: mypy
+        name: mypy
+        entry: uv run mypy
+        language: system
         files: ^app/
-        args: ["--config-file=pyproject.toml"]
-        additional_dependencies:
-          - fastapi>=0.115
-          - pydantic>=2.7
+        args: ["--config-file=pyproject.toml", "app/"]
+        pass_filenames: false
