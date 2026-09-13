@@ -1,0 +1,31 @@
+.PHONY: help install dev up down logs test lint fmt typecheck
+
+help:  ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "%-12s %s\n", $$1, $$2}'
+
+install:  ## Install Python dependencies
+	uv sync
+
+dev:  ## Run API locally with reload
+	uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+up:  ## Start stack in Docker
+	docker compose up -d --build
+
+down:  ## Stop stack
+	docker compose down
+
+logs:  ## Tail API logs
+	docker compose logs -f api
+
+test:  ## Run tests
+	uv run pytest
+
+lint:  ## Run linter
+	uv run ruff check .
+
+fmt:  ## Format code
+	uv run ruff format .
+
+typecheck:  ## Run mypy
+	uv run mypy app/
