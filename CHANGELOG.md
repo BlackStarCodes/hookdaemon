@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Repository scaffold: `pyproject.toml`, `uv.lock`, `README.md`, `ROADMAP.md`, `SPEC.md`, `DECISIONS.md`, `CHANGELOG.md`
+- Initial architecture decision records (`DECISIONS.md`) covering uv, hatchling, and non-root container
 - Pre-commit hooks: ruff, mypy, detect-secrets, hygiene checks
 - Cross-editor consistency: `.editorconfig`, `.gitattributes`
 - FastAPI app with `/health/live` liveness endpoint
