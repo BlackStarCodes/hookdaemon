@@ -21,15 +21,19 @@ If you slip behind at any weekly checkpoint, cut in this order:
 
 ## Week 0 — Environment (1–2 days)
 
-**Goal:** Working VM, Docker, Remote-SSH, empty repo pushed.
+**Goal:** Working VM, Docker, Remote-SSH, scaffolded repo pushed with hooks and CI.
 
 - Ubuntu VM: 4 GB RAM, 2 vCPU, 40 GB disk.
-- Install: `git`, `docker`, `docker compose`, `make`, `cloudflared`, `k6`. Python 3.11 is managed by uv.
-- Configure pre-commit hooks (ruff, mypy, hygiene checks) and `uv python pin 3.11`.
+- Install: `git`, `docker`, `docker compose`, `make`, `cloudflared`, `k6`, `uv`.
+- `uv python pin 3.11` for the project interpreter.
 - VS Code Remote-SSH from Windows.
-- `git init`, push empty repo with `README.md`, `ROADMAP.md`, `SPEC.md`, `DECISIONS.md`, `.gitignore`, `pyproject.toml`.
+- Repo scaffold: `pyproject.toml`, `uv.lock`, `README.md`, `ROADMAP.md`, `SPEC.md`, `DECISIONS.md`, `CHANGELOG.md`, `LICENSE`, `.gitignore`, `.editorconfig`, `.gitattributes`.
+- Pre-commit hooks (ruff, mypy, detect-secrets, hygiene).
+- FastAPI app with `/health/live` in a non-root Docker image.
+- `Makefile` and GitHub Actions lint workflow.
+- Dependabot for pip, actions, and docker.
 
-**Done when:** `docker compose up` runs a hello FastAPI and you reach it from Windows browser.
+**Done when:** `docker compose up` runs the API and `/health/live` responds from the Windows browser; CI is green on GitHub.
 
 ---
 

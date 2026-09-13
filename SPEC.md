@@ -507,6 +507,8 @@ pytest
 ruff                         (lint)
 mypy                         (strict type checking)
 pre-commit                   (git hooks: ruff, mypy, hygiene checks)
+detect-secrets               (pre-commit secret scanning)
+dependabot                   (weekly dependency updates)
 GitHub Actions
 k6                           (load test)
 gunicorn + uvicorn workers   (production serving)
@@ -606,18 +608,31 @@ hookdaemon/
 ├── k6/
 │   ├── ingest.js                    # POST /v1/events load test
 │   └── delivery.js                  # end-to-end delivery load test
+├── docs/
+│   ├── ARCHITECTURE.md              # (Week 3) diagram + rationale
+│   ├── SECURITY.md                  # (Week 5) HMAC, SSRF, rate limiting
+│   ├── TESTING.md                   # (Week 6) unit + integration strategy
+│   ├── OBSERVABILITY.md             # (Week 7) logs, metrics, heartbeat
+│   ├── DEPLOYMENT.md                # (Week 7) Fly.io / Oracle / Hetzner
+│   └── PORTFOLIO.md                 # (Week 8) recruiter framing
 ├── scripts/
 │   ├── bootstrap.py                 # make bootstrap → creates first tenant + key
 │   └── seed.py                      # optional, for local demos
 ├── .github/
+│   ├── dependabot.yml
 │   └── workflows/
-│       └── ci.yml                   # ruff → mypy → unit → integration → docker build
-├── .pre-commit-config.yaml          # git hooks: ruff, mypy, hygiene
-├── .python-version                  # Python version pinned by uv
-├── uv.lock                          # resolved dependency lockfile
-├── .env.example
-├── .gitignore
+│       ├── lint.yml                 # ruff + format + mypy on push and PR
+│       └── ci.yml                   # (Week 6) full test + build pipeline
 ├── .dockerignore
+├── .editorconfig
+├── .env.example
+├── .gitattributes
+├── .gitignore
+├── .pre-commit-config.yaml          # git hooks: ruff, mypy, detect-secrets, hygiene
+├── .python-version                  # Python version pinned by uv
+├── .secrets.baseline
+├── CHANGELOG.md
+├── DECISIONS.md                     # architecture decision records
 ├── Dockerfile                       # API image
 ├── Dockerfile.worker                # worker + dispatcher image (same base, different CMD)
 ├── docker-compose.yml
@@ -625,7 +640,11 @@ hookdaemon/
 ├── Makefile
 ├── pyproject.toml                   # deps, ruff, mypy, pytest config
 ├── README.md
+├── ROADMAP.md                       # 8-week plan and cut order
+├── SPEC.md                          # full specification
+├── uv.lock                          # resolved dependency lockfile
 ```
+
 **Rules for this structure:**
 
 - **One model per file.** Don't put all models in `models.py`.
@@ -671,10 +690,15 @@ Never cut: idempotency, retries, DLQ, HMAC, SSRF, tests, deploy.
 
 ### Week 0 — Environment (1–2 days)
 - Ubuntu VM: 4 GB RAM, 2 vCPU, 40 GB disk minimum.
-- Install: `git`, `docker`, `docker compose`, `make`, `cloudflared`, `k6`. Python 3.11 is managed by uv.
-- Configure pre-commit hooks (ruff, mypy, hygiene checks) and `uv python pin 3.11`.
+- Install: `git`, `docker`, `docker compose`, `make`, `cloudflared`, `k6`, `uv`.
+- `uv python pin 3.11` for the project interpreter.
 - VS Code Remote-SSH from Windows → open `~/projects/hookdaemon`.
-- `git init`, push empty repo with `README.md`, `ROADMAP.md`, `SPEC.md`, `DECISIONS.md`, `.gitignore`, `pyproject.toml`.
+- Repo scaffold: `pyproject.toml`, `uv.lock`, `README.md`, `ROADMAP.md`, `SPEC.md`, `DECISIONS.md`, `CHANGELOG.md`, `LICENSE`, `.gitignore`, `.editorconfig`, `.gitattributes`.
+- Pre-commit hooks: ruff, mypy, detect-secrets, hygiene.
+- FastAPI app with `/health/live`.
+- Non-root `Dockerfile` + `docker-compose.yml` with healthcheck.
+- `Makefile` and GitHub Actions lint workflow.
+- Dependabot for pip, actions, and docker.
 
 **Done when:** `docker compose up` runs a hello FastAPI and you reach it from your Windows browser.
 
