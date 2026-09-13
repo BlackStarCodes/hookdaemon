@@ -24,9 +24,10 @@ If you slip behind at any weekly checkpoint, cut in this order:
 **Goal:** Working VM, Docker, Remote-SSH, empty repo pushed.
 
 - Ubuntu VM: 4 GB RAM, 2 vCPU, 40 GB disk.
-- Install: `git`, `docker`, `docker compose`, `python3.11`, `pip`, `make`, `cloudflared`, `k6`.
+- Install: `git`, `docker`, `docker compose`, `make`, `cloudflared`, `k6`. Python 3.11 is managed by uv.
+- Configure pre-commit hooks (ruff, mypy, hygiene checks) and `uv python pin 3.11`.
 - VS Code Remote-SSH from Windows.
-- `git init`, push empty repo with `README.md`, `ROADMAP.md`, `TICKETS.md`, `DECISIONS.md`, `CONTEXT.md`, `.gitignore`, `SPEC.md`.
+- `git init`, push empty repo with `README.md`, `ROADMAP.md`, `SPEC.md`, `DECISIONS.md`, `.gitignore`, `pyproject.toml`.
 
 **Done when:** `docker compose up` runs a hello FastAPI and you reach it from Windows browser.
 

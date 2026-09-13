@@ -183,7 +183,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 | Serving | gunicorn + uvicorn workers |
 | Tests | pytest (unit + integration) |
 | Test infra | [DevDB](https://github.com/BlackStarCodes/devdb) for ephemeral Postgres |
-| Lint / types | ruff + mypy (strict) |
+| Lint / types | ruff + mypy (strict), enforced via pre-commit |
 | CI | GitHub Actions |
 | Deploy | Fly.io / Oracle Cloud free tier / Hetzner |
 

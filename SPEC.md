@@ -115,11 +115,11 @@ ORDER BY next_attempt_at
 LIMIT 100
 ```
 
-For each row: `LPUSH` the delivery ID to Redis.  
+For each row: `LPUSH` the delivery ID to Redis.
 If Redis is down, log a warning and continue — the next poll will retry.
 
-If multiple dispatchers run, the same `delivery_id` may be LPUSHed twice.  
-This is harmless: the worker's `SKIP LOCKED` claim ensures only one worker  
+If multiple dispatchers run, the same `delivery_id` may be LPUSHed twice.
+This is harmless: the worker's `SKIP LOCKED` claim ensures only one worker
 processes a given delivery.
 
 ### Worker
@@ -158,8 +158,8 @@ Set `statement_timeout = '5s'` on the claim query to avoid lock contention.
 
 ### Worker heartbeat
 
-Each worker writes `worker:<id>:last_seen` to Redis every 10 seconds with a 30s TTL.  
-A separate monitor (or the API's `/health/ready`) can alert if no worker heartbeat  
+Each worker writes `worker:<id>:last_seen` to Redis every 10 seconds with a 30s TTL.
+A separate monitor (or the API's `/health/ready`) can alert if no worker heartbeat
 exists for 60s.
 
 ---
@@ -196,7 +196,7 @@ then → DEAD_LETTER
 
 Use **full jitter**:
 ```python
-delay = random.uniform(0, min(cap, base * 2 ** attempt))
+delay = random.uniform(0, min(cap, base * 2**attempt))
 ```
 
 After the final attempt:
@@ -485,7 +485,7 @@ GET /metrics
 The first tenant is created via a one-time CLI command:
 `make bootstrap`
 
-This creates a tenant, a default API key, and prints the key to stdout.  
+This creates a tenant, a default API key, and prints the key to stdout.
 After the first tenant exists, `POST /v1/tenants` requires an existing admin key.
 
 ---
@@ -506,6 +506,7 @@ Docker + Docker Compose
 pytest
 ruff                         (lint)
 mypy                         (strict type checking)
+pre-commit                   (git hooks: ruff, mypy, hygiene checks)
 GitHub Actions
 k6                           (load test)
 gunicorn + uvicorn workers   (production serving)
@@ -611,6 +612,9 @@ hookdaemon/
 ├── .github/
 │   └── workflows/
 │       └── ci.yml                   # ruff → mypy → unit → integration → docker build
+├── .pre-commit-config.yaml          # git hooks: ruff, mypy, hygiene
+├── .python-version                  # Python version pinned by uv
+├── uv.lock                          # resolved dependency lockfile
 ├── .env.example
 ├── .gitignore
 ├── .dockerignore
@@ -662,32 +666,38 @@ Integration tests also use DevDB to spin up throwaway databases.
 ### Execution rule
 Max timeline: **8 weeks**. If you slip behind at any weekly checkpoint,
 cut in this order: worker heartbeat → RFC 7807 → cursor pagination →
-structured log fields → metrics depth. 
+structured log fields → metrics depth.
 Never cut: idempotency, retries, DLQ, HMAC, SSRF, tests, deploy.
 
 ### Week 0 — Environment (1–2 days)
 - Ubuntu VM: 4 GB RAM, 2 vCPU, 40 GB disk minimum.
 - Install: `git`, `docker`, `docker compose`, `make`, `cloudflared`, `k6`. Python 3.11 is managed by uv.
+- Configure pre-commit hooks (ruff, mypy, hygiene checks) and `uv python pin 3.11`.
 - VS Code Remote-SSH from Windows → open `~/projects/hookdaemon`.
 - `git init`, push empty repo with `README.md`, `ROADMAP.md`, `SPEC.md`, `DECISIONS.md`, `.gitignore`, `pyproject.toml`.
+
 **Done when:** `docker compose up` runs a hello FastAPI and you reach it from your Windows browser.
+
 ### Week 1 — API skeleton
 - FastAPI app, `pydantic-settings` config, `structlog` JSON logging with `request_id` middleware.
 - Postgres + SQLAlchemy async + `asyncpg` + Alembic.
 - `/health/live`, `/health/ready`, `/metrics` (empty for now).
 - Dockerfile + `docker-compose.yml` with API + Postgres.
+
 **Done when**: app starts, migrations run, /health/live and /health/ready respond.
 ### Week 2 — Multi-tenant + endpoints + events
 - Tables: `tenants`, `api_keys` (hashed), `endpoints`, `events`, `idempotency_keys`.
 - Auth: `Authorization: Bearer <api_key>` on all `/v1/*` routes.
 - Endpoints: `POST/GET/PATCH/DELETE /v1/endpoints`.
 - `POST /v1/events` with `Idempotency-Key` (unique per tenant).
+
 **Done when:** same key twice returns the same event; missing auth returns 401.
 ### Week 3 — Deliveries + dispatcher + worker
 - Tables: `deliveries`, `delivery_attempts` (with lock columns and status enum).
 - `POST /v1/events` writes event + delivery rows in **one transaction**, then best-effort `LPUSH`.
 - Dispatcher process polls every 5s.
 - Worker process claims via `SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1`, sends HTTP POST via httpx, records attempt row.
+
 **Done when:** a mock endpoint receives a POST; killing Redis does not lose deliveries (dispatcher recovers them on next poll).
 ### Week 4 — Reliability
 - Retry on 5xx, timeout, connection error (not on 4xx except 408/429).
@@ -695,12 +705,14 @@ Never cut: idempotency, retries, DLQ, HMAC, SSRF, tests, deploy.
 - `DEAD_LETTER` after max attempts.
 - `POST /v1/deliveries/{id}/retry` requeues.
 - Graceful shutdown on `SIGTERM`.
+
 **Done when:** 500→200 retries correctly; 8×500 → DLQ; manual retry works; `kill -TERM` does not lose in-flight work.
 ### Week 5 — Security
 - HMAC-SHA256 signing: `X-Webhook-ID`, `X-Webhook-Timestamp`, `X-Webhook-Signature`, `X-Webhook-Signature-Version: v1`.
 - SSRF: DNS pinning, block RFC1918 / loopback / link-local / `169.254.169.254`, no redirects, 64 KB body cap.
 - Rate limiting: per-endpoint + per-tenant, Redis sliding window.
 - Secrets encrypted at rest (Fernet or libsodium).
+
 **Done when:** signature verifies with a sample receiver; private IP blocked; 101st request in 60s returns 429; DNS rebind test passes.
 ### Week 6 — Testing + CI + START APPLYING
 - `pytest` unit tests: backoff math, signature, SSRF check, state transitions.
@@ -710,12 +722,14 @@ Never cut: idempotency, retries, DLQ, HMAC, SSRF, tests, deploy.
 - GitHub Actions: `ruff` → `mypy` → unit → integration → docker build.
 - Link FastAPI `/docs` (Swagger) from README.
 - **Start applying: 5 roles/day.** Remote Python backend at startups and mid-size. Big tech needs referrals — DM engineers on LinkedIn.
+
 **Done when:** CI green, first batch of applications sent.
 ### Week 7 — Load test + observability
 - k6 against the **deployed** environment: 500–1000 events/sec.
 - Record: success rate, p50/p95/p99 latency, retry rate.
 - Prometheus metrics: `events_ingested_total`, `deliveries_attempted_total`, `delivery_success_total`, `delivery_failure_total`, `retry_total`, `dlq_total`, `delivery_latency_seconds`.
 - README: architecture diagram, tradeoffs, real benchmark numbers.
+
 **Done when:** README contains real numbers, not promises.
 ### Week 8 — Deploy + demo
 - Deploy API + worker + dispatcher + Postgres + Redis on **[Fly.io](https://fly.io/)** (or Oracle Cloud free tier, or Hetzner CX22).
@@ -723,6 +737,7 @@ Never cut: idempotency, retries, DLQ, HMAC, SSRF, tests, deploy.
 - 2–3 minute demo video.
 - Blog post on [Dev.to](https://dev.to/): "Building a Reliable Webhook System."
 - LinkedIn/X announcement.
+
 **Done when:** a stranger can `curl` your live API and see a delivery succeed.
 
 
