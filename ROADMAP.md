@@ -108,9 +108,9 @@ If you slip behind at any weekly checkpoint, cut in this order:
 
 ---
 
-## Week 6 — Testing + CI + START APPLYING
+## Week 6 — Testing + CI
 
-**Goal:** CI green. First batch of applications sent.
+**Goal:** CI green, unit and integration tests running.
 
 - `pytest` unit tests: backoff math, signature, SSRF check, state transitions.
 - `pytest` integration: **DevDB** for ephemeral Postgres, docker-compose for Redis.
@@ -118,11 +118,10 @@ If you slip behind at any weekly checkpoint, cut in this order:
 - `mypy --strict app/` in CI.
 - GitHub Actions: `ruff` → `mypy` → unit → integration → docker build.
 - Link FastAPI `/docs` (Swagger) from README.
-- **Start applying: 5 roles/day.** Remote Python backend at startups and mid-size. Big tech needs referrals — DM engineers on LinkedIn.
 
 **Docs:** `docs/TESTING.md`.
 
-**Done when:** CI green, first batch of applications sent.
+**Done when:** CI green on GitHub; unit and integration tests pass.
 
 ---
 
@@ -148,10 +147,10 @@ If you slip behind at any weekly checkpoint, cut in this order:
 - Deploy API + worker + dispatcher + Postgres + Redis on **Fly.io** (or Oracle Cloud free tier, or Hetzner CX22).
 - HTTPS, public URL, daily Postgres backup.
 - 2–3 minute demo video.
-- Blog post on Dev.to: "Building a Reliable Webhook System."
-- LinkedIn/X announcement.
+- Minimal receiver demo (`scripts/receiver.py`, ~50 lines) that verifies HMAC signatures — used in the demo video.
+- Demo video walks through: register endpoint → send event → receiver verifies signature → inspect delivery history.
 
-**Docs:** `docs/PORTFOLIO.md`, update `README.md` with real numbers.
+**Docs:** update `README.md` with real benchmark numbers.
 
 **Done when:** a stranger can `curl` your live API and see a delivery succeed.
 
@@ -160,13 +159,4 @@ If you slip behind at any weekly checkpoint, cut in this order:
 ## Ongoing (after Week 8)
 
 - Fix bugs from user feedback.
-- Add stretch features only after 4 weeks of applying.
-- Keep DSA going daily.
-
----
-
-## Parallel (all 8 weeks)
-
-- 1–2 NeetCode 150 problems daily.
-- 30 minutes reading: Python, asyncio, SQL, HTTP semantics.
-- 1 progress post per week on LinkedIn/X.
+- Add stretch features from SPEC §18 on an as-needed basis.
