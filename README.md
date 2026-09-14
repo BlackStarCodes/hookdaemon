@@ -4,7 +4,7 @@
 
 **Reliable webhook delivery infrastructure. Postgres as the queue, Redis as a signal, retries you can trust.**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/BlackStarCodes/hookdaemon/ci.yml?style=for-the-badge&label=CI)](https://github.com/BlackStarCodes/hookdaemon/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/BlackStarCodes/hookdaemon/lint.yml?style=for-the-badge&label=CI)](https://github.com/BlackStarCodes/hookdaemon/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg?style=for-the-badge)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg?style=for-the-badge)](https://www.docker.com/)
