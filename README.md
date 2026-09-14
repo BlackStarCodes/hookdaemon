@@ -56,11 +56,11 @@ Instead of another CRUD app, Hookdaemon tackles the questions real backend infra
 |---|---|
 | **Idempotent ingestion** | `POST /v1/events` with `Idempotency-Key`. Same key returns the same event. No duplicates. |
 | **Async delivery** | Worker process decoupled from the API. Slow endpoints don't block ingestion. |
-| **Exponential backoff + jitter** | 8 attempts: 10s, 30s, 2m, 10m, 30m, 1h, 6h, then dead-letter. Full jitter. |
+| **Exponential backoff + jitter** | Attempt 1 immediate; then 10s, 30s, 2m, 10m, 30m, 1h, 6h. Full jitter. 8 attempts max, then dead-letter. |
 | **Dead-letter queue** | Permanently failed deliveries go to DLQ. Inspect, replay, or fix. |
 | **HMAC-SHA256 signing** | Every outbound request signed. Receivers verify authenticity and timestamp freshness. |
 | **SSRF protection** | Private ranges, loopback, metadata endpoints, and redirects blocked. DNS pinning. |
-| **Per-tenant & per-endpoint rate limiting** | Redis sliding window. 100 req/min/endpoint, 1000 req/min/tenant. |
+| **Per-API-key & per-tenant rate limiting** | Atomic Redis sliding window. 100 req/min/API key, 1000 req/min/tenant (inbound only). |
 | **Delivery history** | Every attempt recorded with status code, latency, error type, headers. |
 | **Manual replay** | `POST /v1/deliveries/{id}/retry` requeues without blocking the API. |
 | **Observability** | Structured JSON logs, Prometheus metrics, worker heartbeat. |
@@ -74,11 +74,13 @@ flowchart LR
     PG -.->|dispatcher polls<br/>next_attempt_at| D[Dispatcher]
     D -->|LPUSH| R[(Redis<br/>wake-up signal)]
     R -->|BRPOP| W[Worker]
+    W -.->|fallback poll<br/>if Redis unavailable| PG
     W -->|HMAC-signed POST| EP[Customer Endpoint]
     W -->|SKIP LOCKED claim<br/>record attempt| PG
+    RP[Reaper] -.->|recover stale<br/>in_progress rows| PG
 ```
 
-**Postgres is the source of truth. Redis is only a wake-up signal.** If Redis dies, deliveries do not vanish — the dispatcher still finds them by polling Postgres. Workers claim jobs with `SELECT ... FOR UPDATE SKIP LOCKED`, which makes multi-worker safe.
+**Postgres is the source of truth. Redis is only a wake-up signal.** If Redis dies, deliveries still happen — workers fall back to polling Postgres on a 5-second interval. Workers claim jobs with `SELECT ... FOR UPDATE SKIP LOCKED`, which makes multi-worker safe. A separate reaper recovers deliveries from workers that crash mid-request.
 
 No Celery, Kafka, or Kubernetes. They aren't needed here — Postgres is the queue, Redis is a signal, and the interesting work stays visible.
 
@@ -159,7 +161,7 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 | `MAX_PAYLOAD_BYTES` | Maximum event payload size | No | `262144` (256 KB) |
 | `DELIVERY_TIMEOUT_SECONDS` | HTTP timeout for outbound webhooks | No | `15` |
 | `IDEMPOTENCY_TTL_HOURS` | How long idempotency keys are retained | No | `24` |
-| `DEFAULT_ENDPOINT_RATE_LIMIT` | Requests per minute per endpoint | No | `100` |
+| `DEFAULT_API_KEY_RATE_LIMIT` | Inbound requests per minute per API key | No | `100` |
 | `DEFAULT_TENANT_RATE_LIMIT` | Requests per minute per tenant | No | `1000` |
 | `MAX_ATTEMPTS` | Max delivery retries before dead-letter | No | `8` |
 
@@ -198,7 +200,7 @@ scripts/        bootstrap, seeds
 docs/           Architecture, decisions, reliability, security
 ```
 
-Full tree and rules: [`SPEC.md` §15.5](./SPEC.md).
+Full tree and rules: [`SPEC.md` §16](./SPEC.md).
 
 ## Documentation
 

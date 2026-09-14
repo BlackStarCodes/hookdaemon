@@ -1,7 +1,8 @@
 # Roadmap
 
 **Timeline:** 8 weeks part-time (~15–20 hrs/week).
-**Deadline:** Week 8 = deployed, demoed, applying.
+**Deadline:** Week 8 = deployed and demoed.
+
 
 ---
 
@@ -72,6 +73,8 @@ If you slip behind at any weekly checkpoint, cut in this order:
 - `POST /v1/events` writes event + delivery rows in **one transaction**, then best-effort `LPUSH`.
 - Dispatcher process polls every 5s.
 - Worker process claims via `SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1`, sends HTTP POST via httpx, records attempt row.
+- Integration test: run two workers concurrently, assert no duplicate delivery.
+
 
 **Docs:** `docs/ARCHITECTURE.md`.
 
@@ -88,6 +91,7 @@ If you slip behind at any weekly checkpoint, cut in this order:
 - `DEAD_LETTER` after max attempts.
 - `POST /v1/deliveries/{id}/retry` requeues.
 - Graceful shutdown on `SIGTERM`.
+- Reaper process: returns stale `in_progress` deliveries to `pending` after 5 minutes. Adds `deliveries_reaped_total` metric.
 
 **Done when:** 500→200 retries correctly; 8×500 → DLQ; manual retry works; `kill -TERM` does not lose in-flight work.
 
@@ -99,8 +103,11 @@ If you slip behind at any weekly checkpoint, cut in this order:
 
 - HMAC-SHA256 signing: `X-Webhook-ID`, `X-Webhook-Timestamp`, `X-Webhook-Signature`, `X-Webhook-Signature-Version: v1`.
 - SSRF: DNS pinning, block RFC1918 / loopback / link-local / `169.254.169.254`, no redirects, 64 KB body cap.
-- Rate limiting: per-endpoint + per-tenant, Redis sliding window.
+- Rate limiting: per API key + per tenant, atomic Redis sliding window (Lua).
 - Secrets encrypted at rest (Fernet).
+- Retry-After respected on 429/503 (capped at `MAX_RETRY_AFTER_SECONDS`).
+
+
 
 **Docs:** `docs/SECURITY.md`, `DECISIONS.md` (fill in real ADRs).
 
@@ -129,12 +136,13 @@ If you slip behind at any weekly checkpoint, cut in this order:
 
 **Goal:** Real numbers in README, not promises.
 
-- k6 against the **deployed** environment: 500–1000 events/sec.
-- Record: success rate, p50/p95/p99 latency, retry rate.
-- Prometheus metrics: `events_ingested_total`, `deliveries_attempted_total`, `delivery_success_total`, `delivery_failure_total`, `retry_total`, `dlq_total`, `delivery_latency_seconds`.
+- k6 against the **deployed** environment. Measure baseline throughput and latency.
+- Identify the first bottleneck, fix it, re-measure. Document the before/after.
+- Record: success rate, p50/p95/p99 latency, throughput, retry rate.
+- Prometheus metrics: `events_ingested_total`, `deliveries_attempted_total`, `delivery_success_total`, `delivery_failure_total`, `retry_total`, `dlq_total`, `deliveries_reaped_total`, `delivery_latency_seconds`.
 - README: architecture diagram, tradeoffs, real benchmark numbers.
 
-**Docs:** `docs/OBSERVABILITY.md`, `docs/DEPLOYMENT.md`.
+**Docs:** `docs/OBSERVABILITY.md`, `docs/DEPLOYMENT.md`, `docs/OPERATIONS.md`.
 
 **Done when:** README contains real numbers, not promises.
 
@@ -159,4 +167,4 @@ If you slip behind at any weekly checkpoint, cut in this order:
 ## Ongoing (after Week 8)
 
 - Fix bugs from user feedback.
-- Add stretch features from SPEC §18 on an as-needed basis.
+- Add items from SPEC §18 (Future Work) as priorities allow.

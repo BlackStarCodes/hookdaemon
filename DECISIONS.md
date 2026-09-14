@@ -13,7 +13,6 @@ Newest first.
 | 1 | Use `uv` for dependency and Python version management | Accepted | 2026-09-13 |
 | 2 | Use `hatchling` as the build backend | Accepted | 2026-09-13 |
 | 3 | Run the container as non-root `appuser` (uid 10001) | Accepted | 2026-09-13 |
-| 4 | Postgres as the source of truth; Redis as a wake-up signal | Proposed | Week 3 |
 
 ### ADR-003 — Run the container as non-root `appuser` (uid 10001)
 
