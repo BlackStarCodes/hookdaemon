@@ -1,0 +1,17 @@
+# Gitleaks configuration.
+#
+# Uses gitleaks' default ruleset (thousands of patterns for known cloud and
+# SaaS credentials: AWS, GitHub, Stripe, Slack, GCP, Azure, private keys,
+# JWTs, etc.) extended with an allowlist for the placeholder credentials
+# used throughout this repo. The placeholder is not a secret; it is the
+# default local Postgres user/password baked into development defaults.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Dev-only placeholder credentials in documentation and defaults"
+regexTarget = "match"
+regexes = [
+  '''hookdaemon:hookdaemon@''',
+]

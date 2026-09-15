@@ -7,6 +7,7 @@ repos:
       - id: check-yaml
       - id: check-toml
       - id: check-json
+      - id: check-ast
       - id: check-added-large-files
         args: ["--maxkb=500"]
       - id: check-merge-conflict
@@ -24,6 +25,11 @@ repos:
             \.secrets\.baseline
           )$
 
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.7
     hooks:
@@ -37,6 +43,6 @@ repos:
         name: mypy
         entry: uv run mypy
         language: system
-        files: ^app/
-        args: ["--config-file=pyproject.toml", "app/"]
+        files: ^(app|tests)/
+        args: ["--config-file=pyproject.toml", "app/", "tests/"]
         pass_filenames: false
