@@ -7,7 +7,7 @@ install:  ## Install Python dependencies
 	uv sync
 
 dev:  ## Run API locally with reload
-	uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --no-access-log
 
 up:  ## Start stack in Docker
 	docker compose up -d --build
@@ -28,4 +28,4 @@ fmt:  ## Format code
 	uv run ruff format .
 
 typecheck:  ## Run mypy
-	uv run mypy app/
+	uv run mypy app/ tests/
