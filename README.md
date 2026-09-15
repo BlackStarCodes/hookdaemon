@@ -98,13 +98,10 @@ cp .env.example .env
 
 <details>
 
-<summary>Generate a Fernet key for secret encryption</summary>
+<summary>Optional: encryption key for future features</summary>
 
-Run this and paste the output into `.env` as `SECRET_ENCRYPTION_KEY`:
-
-```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
+Endpoint secret encryption is not implemented yet. When it ships, it will
+read `SECRET_ENCRYPTION_KEY` from `.env`. Nothing to configure today.
 
 </details>
 
@@ -154,22 +151,19 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 
 | Variable | Description | Required | Default |
 |---|---|---|---|
-| `DATABASE_URL` | PostgreSQL connection string | Yes | — |
-| `REDIS_URL` | Redis connection string | Yes | — |
-| `SECRET_ENCRYPTION_KEY` | Fernet key for encrypting endpoint secrets | Yes | — |
-| `LOG_LEVEL` | Logging level (`DEBUG`, `INFO`, `WARNING`) | No | `INFO` |
-| `MAX_PAYLOAD_BYTES` | Maximum event payload size | No | `262144` (256 KB) |
-| `DELIVERY_TIMEOUT_SECONDS` | HTTP timeout for outbound webhooks | No | `15` |
-| `IDEMPOTENCY_TTL_HOURS` | How long idempotency keys are retained | No | `24` |
-| `DEFAULT_API_KEY_RATE_LIMIT` | Inbound requests per minute per API key | No | `100` |
-| `DEFAULT_TENANT_RATE_LIMIT` | Requests per minute per tenant | No | `1000` |
-| `MAX_ATTEMPTS` | Max delivery retries before dead-letter | No | `8` |
+| `DATABASE_URL` | PostgreSQL connection string (asyncpg) | No | local Docker default |
+| `REDIS_URL` | Redis connection string | No | `redis://localhost:6379/0` |
+| `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` | No | `INFO` |
+| `LOG_JSON` | `true` for JSON output, `false` for colored console | No | `true` |
+| `APP_NAME` | Service name shown in OpenAPI and logs | No | `hookdaemon` |
+| `APP_VERSION` | Service version | No | `0.1.0` |
+| `ENVIRONMENT` | `dev` / `test` / `prod` | No | `dev` |
+| `DB_POOL_SIZE` | Per-process DB connection pool size (1–50) | No | `5` |
+| `DB_MAX_OVERFLOW` | Additional connections allowed (0–100) | No | `10` |
+| `DB_POOL_PRE_PING` | Verify pooled connections before use | No | `true` |
 
-Generate `SECRET_ENCRYPTION_KEY` with:
+Additional settings are added as features ship.
 
-```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
 
 ## Tech stack
 
