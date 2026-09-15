@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     environment: Literal["dev", "test", "prod"] = "dev"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
+    # --- Logging ---
+    log_json: bool = True
+
     # --- Database (asyncpg driver) ---
     # Defaults target docker-compose's local Postgres. Override in .env
     # for anything non-local.
