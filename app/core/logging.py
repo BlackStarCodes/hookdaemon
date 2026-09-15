@@ -1,6 +1,6 @@
 """Structured JSON logging via structlog, with stdlib interception.
 
-Every log line is JSON in Production and CI (``LOG_JSON=true``) or a
+Every log line is JSON in production and CI (``LOG_JSON=true``) or a
 human-readable console line in local dev (``LOG_JSON=false``). Structlog and
 stdlib are bridged with ``ProcessorFormatter`` so our loggers and any library
 using stdlib ``logging`` (uvicorn, SQLAlchemy, httpx) share one pipeline.
@@ -9,7 +9,7 @@ Request-scoped fields (``request_id``, ``event_id``, ``delivery_id``,
 ``attempt_id``) are injected via ``structlog.contextvars``.
 
 Redaction is defense in depth: sensitive-keyed values in the event dict are
-replaced with ``[REDACTED]`` before rendering. Never rely on this alone -
+replaced with ``[REDACTED]`` before rendering. Never rely on this alone —
 code must still avoid logging secrets in the first place.
 """
 
@@ -174,6 +174,13 @@ def setup_logging(
         root.removeHandler(existing)
     root.addHandler(handler)
     root.setLevel(level)
+
+    # Uvicorn attaches its own handlers before importing app.main. Clear them
+    # so uvicorn's loggers propagate to our root handler and emit JSON.
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uv_logger = logging.getLogger(name)
+        uv_logger.handlers.clear()
+        uv_logger.propagate = True
 
 
 def get_logger(name: str | None = None) -> FilteringBoundLogger:
