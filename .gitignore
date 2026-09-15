@@ -31,3 +31,10 @@ data/
 TICKETS.md
 CONTEXT.md
 tickets/
+
+# mypy daemon
+.dmypy.json
+
+# patch artifacts
+*.orig
+*.rej
