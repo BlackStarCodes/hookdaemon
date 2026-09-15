@@ -3,6 +3,7 @@
 **Timeline:** 8 weeks part-time (~15–20 hrs/week).
 **Deadline:** Week 8 = deployed and demoed.
 
+**Current week:** 1 — API skeleton (Phase A complete: config + logging).
 
 ---
 
