@@ -1,25 +1,13 @@
 """Tests for app.core.logging.setup_logging."""
 
-import json
 import logging
 from io import StringIO
-from typing import Any
 
 import structlog
 
 from app.config import Settings
 from app.core.logging import get_logger, setup_logging
-
-
-def _parse_lines(buf: StringIO) -> list[dict[str, Any]]:
-    """Parse every non-empty line of the buffer as JSON."""
-    out: list[dict[str, Any]] = []
-    for line in buf.getvalue().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        out.append(json.loads(line))
-    return out
+from tests.helpers import parse_json_lines
 
 
 def test_setup_logging_is_idempotent() -> None:
@@ -37,7 +25,7 @@ def test_log_line_is_valid_json() -> None:
     log = get_logger("test")
     log.info("hello", key="value")
 
-    lines = _parse_lines(buf)
+    lines = parse_json_lines(buf)
     assert len(lines) == 1
     entry = lines[0]
     assert entry["event"] == "hello"
@@ -61,7 +49,7 @@ def test_request_id_propagates_via_contextvars() -> None:
 
     structlog.contextvars.clear_contextvars()
 
-    lines = _parse_lines(buf)
+    lines = parse_json_lines(buf)
     assert len(lines) == 2
     assert all(line["request_id"] == "req-abc" for line in lines)
 
@@ -77,7 +65,7 @@ def test_log_level_filtering() -> None:
     log.info("info-line")
     log.warning("warn-line")
 
-    lines = _parse_lines(buf)
+    lines = parse_json_lines(buf)
     events = [line["event"] for line in lines]
     assert "warn-line" in events
     assert "info-line" not in events
@@ -90,7 +78,7 @@ def test_stdlib_logging_is_json() -> None:
 
     logging.getLogger("thirdparty").warning("from-stdlib")
 
-    lines = _parse_lines(buf)
+    lines = parse_json_lines(buf)
     assert len(lines) == 1
     entry = lines[0]
     assert entry["event"] == "from-stdlib"
@@ -111,7 +99,7 @@ def test_sensitive_keys_redacted_top_level() -> None:
         api_key="sk_live_x",  # pragma: allowlist secret
     )
 
-    lines = _parse_lines(buf)
+    lines = parse_json_lines(buf)
     assert lines[0]["user"] == "alice"
     assert lines[0]["password"] == "[REDACTED]"
     assert lines[0]["api_key"] == "[REDACTED]"
@@ -127,7 +115,7 @@ def test_sensitive_keys_redacted_nested() -> None:
         request={"headers": {"Authorization": "Bearer abc", "Accept": "*/*"}},
     )
 
-    lines = _parse_lines(buf)
+    lines = parse_json_lines(buf)
     nested = lines[0]["request"]["headers"]
     assert nested["Authorization"] == "[REDACTED]"
     assert nested["Accept"] == "*/*"
@@ -140,7 +128,7 @@ def test_sensitive_keys_case_and_dash_insensitive() -> None:
     log = get_logger("test")
     log.info("hdr", **{"X-Api-Key": "sk_live_y", "set-cookie": "sess=1"})
 
-    lines = _parse_lines(buf)
+    lines = parse_json_lines(buf)
     assert lines[0]["X-Api-Key"] == "[REDACTED]"
     assert lines[0]["set-cookie"] == "[REDACTED]"
 
@@ -177,7 +165,7 @@ def test_sensitive_keys_redacted_on_exception_log() -> None:
     except ValueError:
         log.exception("db-error", password="p")
 
-    lines = _parse_lines(buf)
+    lines = parse_json_lines(buf)
     assert lines[0]["password"] == "[REDACTED]"
     assert lines[0]["event"] == "db-error"
 
@@ -194,7 +182,7 @@ def test_mapping_and_list_nesting_redacted() -> None:
         meta={"inner": {"api_key": "sk_live"}},  # pragma: allowlist secret
     )
 
-    lines = _parse_lines(buf)
+    lines = parse_json_lines(buf)
     assert lines[0]["headers"][0]["Authorization"] == "[REDACTED]"
     assert lines[0]["headers"][1]["Cookie"] == "[REDACTED]"
     assert lines[0]["meta"]["inner"]["api_key"] == "[REDACTED]"
