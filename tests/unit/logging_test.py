@@ -186,3 +186,16 @@ def test_mapping_and_list_nesting_redacted() -> None:
     assert lines[0]["headers"][0]["Authorization"] == "[REDACTED]"
     assert lines[0]["headers"][1]["Cookie"] == "[REDACTED]"
     assert lines[0]["meta"]["inner"]["api_key"] == "[REDACTED]"
+
+
+def test_uvicorn_loggers_propagate_to_root() -> None:
+    """Uvicorn's loggers must propagate to root so their output is JSON."""
+    buf = StringIO()
+    setup_logging(Settings(_env_file=None), stream=buf)  # type: ignore[call-arg]
+
+    logging.getLogger("uvicorn.error").info("Started server process")
+
+    lines = parse_json_lines(buf)
+    assert len(lines) == 1
+    assert lines[0]["event"] == "Started server process"
+    assert lines[0]["logger"] == "uvicorn.error"
