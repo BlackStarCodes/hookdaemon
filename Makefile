@@ -18,6 +18,12 @@ down:  ## Stop stack
 logs:  ## Tail API logs
 	docker compose logs -f api
 
+migrate: ## Apply all pending Alembic migrations
+	uv run alembic upgrade head
+
+migrate-new: ## Autogenerate a new migration (usage: make migrate-new M="msg")
+	uv run alembic revision --autogenerate -m "$(M)"
+
 test:  ## Run tests
 	uv run pytest
 
