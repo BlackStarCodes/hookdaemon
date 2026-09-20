@@ -18,6 +18,8 @@ USER appuser
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY --chown=appuser:appuser app ./app
+COPY --chown=appuser:appuser alembic.ini ./
+COPY --chown=appuser:appuser alembic ./alembic
 
 RUN uv sync --frozen --no-dev
 

@@ -4,11 +4,38 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - LOG_LEVEL=INFO
+      LOG_LEVEL: INFO
+      # In-network host is the service name `db`, not `localhost`.
+      DATABASE_URL: postgresql+asyncpg://hookdaemon:hookdaemon@db:5432/hookdaemon  # pragma: allowlist secret
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')"]
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')"
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: hookdaemon
+      POSTGRES_PASSWORD: hookdaemon  # pragma: allowlist secret
+      POSTGRES_DB: hookdaemon
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hookdaemon -d hookdaemon"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
