@@ -7,6 +7,8 @@ import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.api.v1.health import router as health_router
+from app.api.v1.router import api_router
 from app.config import get_settings
 from app.core.logging import get_logger, setup_logging
 from app.core.middleware import RequestIDMiddleware
@@ -38,6 +40,11 @@ app = FastAPI(
     version=settings.app_version,
     lifespan=lifespan,
 )
+# Probes live at root: /health/live, /health/ready.
+app.include_router(health_router)
+# Business endpoints live under /v1/*.
+app.include_router(api_router)
+
 
 # RequestIDMiddleware is the only user middleware in v1. If more are added
 # later, this must remain the LAST add_middleware() call so it runs first
@@ -57,10 +64,11 @@ async def unhandled_exception_handler(
     response header so a client can correlate.
     """
     request_id = structlog.contextvars.get_contextvars().get("request_id", "")
-    logger.exception(
+    logger.error(
         "unhandled_exception",
         path=request.url.path,
         method=request.method,
+        exc_info=exc,
     )
     headers = {"X-Request-ID": request_id} if request_id else None
     return JSONResponse(
@@ -68,8 +76,3 @@ async def unhandled_exception_handler(
         content={"detail": "Internal Server Error"},
         headers=headers,
     )
-
-
-@app.get("/health/live")
-async def liveness() -> dict[str, str]:
-    return {"status": "ok"}
