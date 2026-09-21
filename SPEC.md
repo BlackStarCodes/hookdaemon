@@ -18,8 +18,14 @@ The project focuses on backend engineering and distributed-system concepts:
 - failure handling
 - observability
 - Docker and CI/CD
+
 ### Pitch
 > A reliable webhook delivery service that accepts events, queues them for asynchronous delivery, retries failures automatically, and provides complete delivery history and observability.
+
+**Status of this document.** SPEC describes the target system. Sections that
+describe features not yet implemented are still normative — they define the
+contract the code must meet. Current implementation status is tracked in
+`ROADMAP.md` and `CHANGELOG.md`.
 
 ---
 ## 2. Why This Project
@@ -896,7 +902,18 @@ GET /metrics
 ```
 **Readiness semantics:**
 - `/health/live` — returns `200` if the API process responds. No dependency checks.
-- `/health/ready` — returns `200` if **Postgres is reachable** and migrations are at head. Redis is checked and reported but **does not gate readiness** (Redis is optional for correctness by design). Response body includes `{postgres: "ok", redis: "ok|unavailable", migrations: "current"}`.
+- `/health/ready` — returns `200` if **Postgres is reachable** and migrations are at head. Redis is checked and reported but **does not gate readiness**. Current response body:
+
+  ```json
+  {
+    "postgres": {"status": "ok", "migration": "abc123"},
+    "redis": {"status": "not_configured"}
+  }
+  ```
+
+**When Postgres is unreachable**, `postgres.status` is `"unreachable"` with an
+`error` field (`timeout`, `migrations_not_applied`, `alembic_version_empty`,
+or an exception class name). `/health/ready` returns `503` in that case.
 
 **Worker health is separate from API readiness**. `/health/ready` reports API process and Postgres reachability. It does not guarantee that workers are running. A dedicated check reads the worker heartbeat keys in Redis (`worker:*:last_seen`) and reports `workers: "ok"|"none"|"stale"` in the readiness body. A healthy API with zero workers is not a healthy delivery system; the readiness body surfaces this without gating the API's readiness.
 
@@ -935,6 +952,8 @@ ruff                         (lint)
 mypy                         (strict type checking)
 pre-commit                   (git hooks: ruff, mypy, hygiene checks)
 detect-secrets               (pre-commit secret scanning)
+gitleaks                     (pre-commit secret scanning, pattern-based)
+check-ast                    (pre-commit Python syntax validation)
 dependabot                   (weekly dependency updates)
 GitHub Actions
 k6                           (load test)
@@ -1117,10 +1136,26 @@ hookdaemon/
 
 ### .env.example
 ```text
-DATABASE_URL=postgresql+asyncpg://user:pass@db:5432/webhooks
-REDIS_URL=redis://redis:6379/0
-SECRET_ENCRYPTION_KEY=<fernet key>
+# --- Core ---
+APP_NAME=hookdaemon
+APP_VERSION=0.1.0
+ENVIRONMENT=dev
 LOG_LEVEL=INFO
+LOG_JSON=true
+
+# --- Database ---
+DATABASE_URL=postgresql+asyncpg://hookdaemon:hookdaemon@localhost:5432/hookdaemon  # pragma: allowlist secret
+DB_POOL_SIZE=5
+DB_POOL_SIZE=5
+DB_MAX_OVERFLOW=10
+DB_POOL_PRE_PING=true
+DB_POOL_RECYCLE=1800
+
+# --- Redis ---
+REDIS_URL=redis://localhost:6379/0
+
+# --- Planned ---
+SECRET_ENCRYPTION_KEY=<fernet key>
 MAX_PAYLOAD_BYTES=262144
 DELIVERY_TIMEOUT_SECONDS=15
 IDEMPOTENCY_TTL_HOURS=24

@@ -1,4 +1,8 @@
-.PHONY: help install dev up down logs test lint fmt typecheck
+.PHONY: help install dev up down logs migrate migrate-new test lint fmt typecheck pre-commit
+
+SHELL := /bin/bash
+.SHELLFLAGS := -eu -o pipefail -c
+.DEFAULT_GOAL := help
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "%-12s %s\n", $$1, $$2}'
@@ -19,10 +23,10 @@ logs:  ## Tail API logs
 	docker compose logs -f api
 
 migrate: ## Apply all pending Alembic migrations
-	uv run alembic upgrade head
+	docker compose exec api alembic upgrade head
 
 migrate-new: ## Autogenerate a new migration (usage: make migrate-new M="msg")
-	uv run alembic revision --autogenerate -m "$(M)"
+	docker compose exec api alembic revision --autogenerate -m "$(M)"
 
 test:  ## Run tests
 	uv run pytest
@@ -35,3 +39,6 @@ fmt:  ## Format code
 
 typecheck:  ## Run mypy
 	uv run mypy app/ tests/
+
+pre-commit: ## Run all pre-commit hooks on all files
+	uv run pre-commit run --all-files
