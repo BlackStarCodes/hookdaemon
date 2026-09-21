@@ -15,9 +15,9 @@
 
 ---
 
-> **Live demo:** _coming Week 8_ · **Blog post:** _coming Week 8_
+> **Live demo:** _planned_ · **Blog post:** _planned_
 
-<!-- TODO: Add demo GIF after Week 8 -->
+<!-- TODO: Add demo GIF when the live demo ships -->
 <!-- <div align="center"><img src="docs/demo.gif" alt="Hookdaemon delivery history" width="600" /></div> -->
 
 ## What this is
@@ -45,12 +45,14 @@ Instead of another CRUD app, Hookdaemon tackles the questions real backend infra
 | Docker | 24+ | [docker.com](https://docs.docker.com/get-docker/) |
 | Docker Compose | v2+ | Included with Docker Desktop |
 | Git | Any | [git-scm.com](https://git-scm.com/) |
-| [DevDB](https://github.com/BlackStarCodes/devdb) | Latest | Optional — for integration tests |
+| [DevDB](https://github.com/BlackStarCodes/devdb) | Latest | Planned — for integration tests |
 
 **Not required:** Postgres and Redis are provisioned by Docker Compose. You do not need them installed on your host.
 
 
 ## Features
+Features below describe the target design. See [ROADMAP.md](./ROADMAP.md)
+for what has shipped.
 
 | Feature | Description |
 |---|---|
@@ -84,7 +86,6 @@ flowchart LR
 
 No Celery, Kafka, or Kubernetes. They aren't needed here — Postgres is the queue, Redis is a signal, and the interesting work stays visible.
 
-Full rationale: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 
 ## Quick Start
 
@@ -115,35 +116,19 @@ docker compose up -d
 |---|---|
 | API | http://localhost:8000 |
 | Swagger | http://localhost:8000/docs |
-| Metrics | http://localhost:8000/metrics |
+| Health (liveness) | http://localhost:8000/health/live |
+| Health (readiness) | http://localhost:8000/health/ready |
 
-### 3. Bootstrap a tenant
+`/health/ready` returns `503` until the database is migrated in the next step.
 
-```bash
-make bootstrap
-```
-
-This creates a tenant, a default API key, and prints the key to stdout.
-
-### 4. Send an event
+### 3. Apply database migrations
 
 ```bash
-curl -X POST http://localhost:8000/v1/events \
-  -H "Authorization: Bearer <api_key>" \
-  -H "Idempotency-Key: $(uuidgen)" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "event_type": "order.created",
-    "payload": {"order_id": 123, "amount": 4999}
-  }'
+make migrate
 ```
 
-### 5. Check delivery status
+Runs `alembic upgrade head` inside the API image. Safe to run repeatedly — it is a no-op when the schema is already current.
 
-```bash
-curl http://localhost:8000/v1/deliveries \
-  -H "Authorization: Bearer <api_key>"
-```
 
 ## Configuration
 
@@ -161,38 +146,40 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 | `DB_POOL_SIZE` | Per-process DB connection pool size (1–50) | No | `5` |
 | `DB_MAX_OVERFLOW` | Additional connections allowed (0–100) | No | `10` |
 | `DB_POOL_PRE_PING` | Verify pooled connections before use | No | `true` |
+| `DB_POOL_RECYCLE` | Recycle pooled connections after this many seconds (0 disables) | No | `1800` |
 
 Additional settings are added as features ship.
 
 
 ## Tech stack
+Target stack. Rows marked † are planned and not yet installed.
+
 
 | Layer | Choice |
 |---|---|
 | Language | Python 3.11+ |
 | API | FastAPI + Pydantic |
 | Database | PostgreSQL + SQLAlchemy (async) + Alembic |
-| Queue / cache | Redis (wake-up signal + rate limiting) |
-| HTTP client | httpx |
+| Queue / cache † | Redis (wake-up signal + rate limiting) |
+| HTTP client † | httpx |
 | Logging | structlog (JSON) |
-| Metrics | prometheus-client |
-| Serving | gunicorn + uvicorn workers |
+| Metrics † | prometheus-client |
+| Serving † | uvicorn (gunicorn + uvicorn workers at deploy) |
 | Tests | pytest (unit + integration) |
 | Test infra | [DevDB](https://github.com/BlackStarCodes/devdb) for ephemeral Postgres |
 | Lint / types | ruff + mypy (strict), enforced via pre-commit |
 | CI | GitHub Actions |
-| Deploy | Fly.io / Oracle Cloud free tier / Hetzner |
+| Deploy † | Fly.io / Oracle Cloud free tier / Hetzner |
 
 ## Repository layout
 
 ```text
-app/            FastAPI app, models, schemas, services, workers
+app/            FastAPI app (api/, core/, config.py, db.py, main.py)
 alembic/        Database migrations
-tests/          Unit and integration tests
-k6/             Load test scripts
-scripts/        bootstrap, seeds
-docs/           Architecture, decisions, reliability, security
+tests/          Unit tests
 ```
+
+Additional folders — scripts/, k6/, docs/ — ship in later weeks.
 
 Full tree and rules: [`SPEC.md` §16](./SPEC.md).
 
@@ -201,6 +188,7 @@ Full tree and rules: [`SPEC.md` §16](./SPEC.md).
 - [`SPEC.md`](./SPEC.md) — full specification
 - [`ROADMAP.md`](./ROADMAP.md) — 8-week plan
 - [`DECISIONS.md`](./DECISIONS.md) — architecture decision records
+- [`CHANGELOG.md`](./CHANGELOG.md) — release history
 
 
 ## Status

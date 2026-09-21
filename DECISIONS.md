@@ -15,6 +15,162 @@ Newest first.
 | 3 | Run the container as non-root `appuser` (uid 10001) | Accepted | 2026-09-13 |
 | 4 | Bridge structlog and stdlib logging via ProcessorFormatter | Accepted | 2026-09-15 |
 | 5 | Pure ASGI middleware for request IDs (not BaseHTTPMiddleware) | Accepted | 2026-09-15 |
+| 6 | Async SQLAlchemy with asyncpg and connection recycling | Accepted | 2026-09-20 |
+| 7 | Alembic reads `DATABASE_URL` from Settings, not `alembic.ini` | Accepted | 2026-09-20 |
+| 8 | Postgres is not published to the host | Accepted | 2026-09-20 |
+| 9 | Health probes are registered at root, not under `/v1` | Accepted | 2026-09-20 |
+
+---
+
+### ADR-009 — Health probes are registered at root, not under `/v1`
+
+**Status:** Accepted
+**Date:** 2026-09-20
+
+**Context**
+The API versioning scheme mounts business resources under `/v1/*`. Health
+probes are consumed by load balancers and orchestrators (Kubernetes, Fly,
+Render) that are configured with a fixed path and do not participate in API
+versioning. Placing probes under `/v1/health/...` couples infrastructure
+lifecycle to API evolution.
+
+**Decision**
+`/health/live` and `/health/ready` are registered at the application root.
+The `/v1` router aggregates only resource endpoints. `/health/ready` returns
+`503` when the service cannot serve traffic; `200` otherwise.
+
+**Consequences**
+- Load balancers use a stable path independent of API versioning.
+- `app/main.py` must register the health router separately from the `/v1`
+  router. This is explicit in the code.
+- A future `/v2` will not silently move the probe path.
+
+**Alternatives considered**
+- Mount probes under `/v1/health/*` — rejected: forces infrastructure to
+  track API versions; breaks Kubernetes conventions.
+- Use the root path but suffix with version — rejected: adds no value for
+  a probe whose contract is already minimal.
+
+---
+
+### ADR-008 — Postgres is not published to the host
+
+**Status:** Accepted
+**Date:** 2026-09-20
+
+**Context**
+The first version of `docker-compose.yml` mapped container port 5432 to host
+port 5432 for interactive debugging. On this VM that collided with the
+system Postgres, causing `docker compose up` to fail. More importantly, a
+published database port is a security surface: the port is reachable from
+any interface on the host, and the container is meant to be deployed to
+environments where Postgres should not be publicly exposed.
+
+**Decision**
+The `db` service does not publish a host port. Containers reach Postgres
+over the compose bridge by service name (`db:5432`). Interactive debugging
+is done with `docker compose exec db psql -U hookdaemon -d hookdaemon`.
+
+**Consequences**
+- No host port conflict on any developer machine.
+- Database is not reachable from outside the compose network.
+- GUI database clients cannot connect without adding a loopback-only
+  binding on a non-standard port; not needed for this project.
+- When a hosted database is used in production, its exposure is a
+  provider-specific concern; the compose file teaches the correct
+  default.
+
+**Alternatives considered**
+- Publish on `127.0.0.1:5432:5432` — rejected: still conflicts with a
+  local Postgres, still exposes the port.
+- Publish on a non-standard host port (`54320:5432`) — rejected: solves
+  the collision but not the security concern; unnecessary given
+  `docker compose exec`.
+
+---
+
+### ADR-007 — Alembic reads `DATABASE_URL` from Settings, not `alembic.ini`
+
+**Status:** Accepted
+**Date:** 2026-09-20
+
+**Context**
+Alembic's default template puts `sqlalchemy.url` in `alembic.ini`. That
+file is committed to git. Any URL with a real password ends up in version
+control. Alembic also produces migrations that must be runnable inside the
+deployment image, not only on a developer's host.
+
+**Decision**
+`alembic.ini` omits `sqlalchemy.url`. `alembic/env.py` imports the
+application `Settings` and calls
+`config.set_main_option("sqlalchemy.url", get_settings().database_url)`,
+escaping `%` as `%%` because Alembic's `Config` treats `%` as interpolation.
+
+The Dockerfile copies `alembic.ini` and `alembic/` into the image so
+`alembic upgrade head` can run as a separate deploy step inside the
+deployed environment.
+
+**Consequences**
+- Only one source of truth for the connection string: `Settings` and `.env`.
+- No credentials in the repository.
+- Percent-encoded passwords work correctly (mitigated by escaping).
+- Alembic is coupled to `app.config`, so `app` must be importable when
+  `env.py` runs. Both host and image satisfy this.
+- Migrations run in a single transaction with `NullPool` (one connection,
+  closed after).
+
+**Alternatives considered**
+- Keep `sqlalchemy.url` in `alembic.ini` — rejected: credentials in VCS.
+- Read the URL from an environment variable directly in `env.py` —
+  rejected: duplicates the parsing logic that `Settings` already handles.
+- Run migrations from the host only — rejected: the deployment must be
+  self-contained.
+
+---
+
+### ADR-006 — Async SQLAlchemy with asyncpg and connection recycling
+
+**Status:** Accepted
+**Date:** 2026-09-20
+
+**Context**
+Every request to the API may need a database session. The API is async
+(FastAPI + asyncio); blocking the event loop on database I/O would serialize
+all concurrent requests. Postgres servers often close idle connections after
+a configured interval, and a connection that has been idle long enough to
+be closed server-side but not client-side produces errors on the next use.
+
+**Decision**
+Use SQLAlchemy 2.x with `create_async_engine` and the `asyncpg` driver.
+Engine configuration:
+
+- `pool_size=5`, `max_overflow=10` (from Settings)
+- `pool_pre_ping=True` — validates a pooled connection before use
+- `pool_recycle=1800` — recycles connections every 30 minutes so
+  server-side idle timeouts do not invalidate in-use connections
+- `echo=False`, `hide_parameters=True` — even if SQL echo is enabled for
+  debugging, parameter values are masked
+
+`SessionFactory` uses `expire_on_commit=False` (FastAPI recommendation so
+instances remain usable after commit) and `autoflush=False` (explicit flush
+control).
+
+**Consequences**
+- API remains non-blocking under concurrent load.
+- `pool_pre_ping` interacts poorly with some asyncpg failure modes
+  (InternalClientError on server-side session termination); `pool_recycle`
+  mitigates by ensuring connections do not reach the idle timeout.
+- `asyncpg` is required as a runtime dependency; the pure-Python drivers
+  are not used.
+- Session lifecycle is bound to the request via `get_session` dependency.
+
+**Alternatives considered**
+- Sync SQLAlchemy with `psycopg2` — rejected: blocks the event loop.
+- `psycopg3` async — viable; chose `asyncpg` for maturity and performance
+  at the current scale.
+- No connection pooling — rejected: reconnect overhead per request.
+
+---
 
 ### ADR-005 — Pure ASGI middleware for request IDs (not BaseHTTPMiddleware)
 
@@ -186,6 +342,8 @@ pinning (`uv python pin`), dependency resolution (`uv lock`), and sync
 - `pip` + `requirements.txt` — rejected: no resolver guarantees, no lockfile standard.
 - `poetry` — rejected: heavier, slower, opinionated beyond dependency management.
 - `pdm` — rejected: viable but less tooling around interpreter management.
+
+---
 
 ## Template
 
