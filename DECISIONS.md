@@ -19,7 +19,38 @@ Newest first.
 | 7 | Alembic reads `DATABASE_URL` from Settings, not `alembic.ini` | Accepted | 2026-09-20 |
 | 8 | Postgres is not published to the host | Accepted | 2026-09-20 |
 | 9 | Health probes are registered at root, not under `/v1` | Accepted | 2026-09-20 |
+| 10 | The initial migration is empty; it stamps `alembic_version` only | Accepted | 2026-09-22 |
 
+---
+### ADR-010 — The initial migration is empty; it stamps `alembic_version` only
+
+**Status:** Accepted
+**Date:** 2026-09-22
+
+**Context**
+`/health/ready` returns `503` unless `alembic_version` has a row. The
+project needs an "at head" signal even before any domain table exists.
+Two options: create the first domain table in the initial migration, or
+ship an empty revision that only creates the version row.
+
+**Decision**
+The first Alembic revision has an empty `upgrade()` and `downgrade()`. Its
+only effect is to insert the revision id into `alembic_version`, which
+Alembic creates on first upgrade. Domain tables land in the migrations
+that introduce their models.
+
+**Consequences**
+- Readiness flips to `200` on a schema with no domain tables — matches what
+  "migrations at head" means.
+- Each future migration corresponds to one feature.
+- Autogenerate is wired; the next revision with real models produces real
+  DDL.
+
+**Alternatives considered**
+- Create `tenants` in the initial migration — rejected: couples the
+  readiness signal to Week 2 work.
+- Skip the initial revision; rely on `alembic_version` existing when the
+  first real migration runs — rejected: readiness stays `503` until Week 2.
 ---
 
 ### ADR-009 — Health probes are registered at root, not under `/v1`

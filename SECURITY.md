@@ -45,5 +45,5 @@ Out of scope:
 
 ## Design references
 
-The threat model and existing mitigations are documented in
+The security design and existing mitigations are documented in
 [`SPEC.md`](./SPEC.md) §8 (HMAC), §9 (SSRF), and §10 (rate limiting).

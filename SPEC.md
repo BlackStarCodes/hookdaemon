@@ -1074,16 +1074,16 @@ hookdaemon/
 │   ├── __init__.py
 │   ├── conftest.py                  # pytest fixtures: DevDB, redis, client
 │   ├── unit/
-│   │   ├── test_retry.py
-│   │   ├── test_signing.py
-│   │   ├── test_ssrf.py
-│   │   └── test_rate_limit.py
+│   │   ├── retry_test.py
+│   │   ├── signing_test.py
+│   │   ├── ssrf_test.py
+│   │   └── rate_limit_test.py
 │   └── integration/
-│       ├── test_events.py
-│       ├── test_deliveries.py
-│       ├── test_worker.py
-│       ├── test_retry_flow.py
-│       └── test_dlq_replay.py
+│       ├── events_test.py
+│       ├── deliveries_test.py
+│       ├── worker_test.py
+│       ├── retry_flow_test.py
+│       └── dlq_replay_test.py
 ├── k6/
 │   ├── ingest.js                    # POST /v1/events load test
 │   └── delivery.js                  # end-to-end delivery load test
