@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--strict-markers` and `--strict-config` for pytest; explicit
   `asyncio_default_fixture_loop_scope`
 - `[tool.uv] required-version` pin to prevent lockfile drift
+- Declarative base (`app/models/base.py`) with a shared `TimestampMixin`
+  providing database-set `created_at` and `updated_at`
+- Alembic autogenerate wiring (`target_metadata = Base.metadata`) and the
+  initial migration; `/health/ready` returns `200` once it is applied
 
 ### Changed
 
