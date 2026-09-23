@@ -20,6 +20,41 @@ Newest first.
 | 8 | Postgres is not published to the host | Accepted | 2026-09-20 |
 | 9 | Health probes are registered at root, not under `/v1` | Accepted | 2026-09-20 |
 | 10 | The initial migration is empty; it stamps `alembic_version` only | Accepted | 2026-09-22 |
+| 11 | `Idempotency-Key` is required on `POST /v1/events` | Accepted | 2026-09-23 |
+
+---
+
+### ADR-011 — `Idempotency-Key` is required on `POST /v1/events`
+
+**Status:** Accepted
+**Date:** 2026-09-23
+
+**Context**
+A `POST /v1/events` request may be retried by the client at any time —
+network timeout, 5xx, or an operator replaying a batch. Without an
+idempotency key, every retry creates a new event and a new set of
+deliveries. Two designs were considered: require the header, or accept
+requests without it and skip deduplication.
+
+**Decision**
+`Idempotency-Key` is required. A request without it returns `422
+Unprocessable Entity` with a Problem Details body naming the missing
+header. There is no unprotected ingestion path.
+
+**Consequences**
+- Every accepted event carries a per-tenant deduplication key, so a client
+  retry can never duplicate a delivery fan-out.
+- Clients must generate and preserve a key across retries. This is a
+  small cost; the same pattern is used by Stripe and Shopify.
+- Bulk imports that do not have a natural key must synthesize one (e.g. a
+  UUID per payload) — the server does not do this on the client's behalf.
+
+**Alternatives considered**
+- Optional header with no deduplication when absent — rejected: forces
+  every downstream consumer to be idempotent, and hides the failure mode
+  from the client.
+- Server-generated key from a body hash — rejected: identical bodies with
+  different intent would collide; the client's intent is authoritative.
 
 ---
 
