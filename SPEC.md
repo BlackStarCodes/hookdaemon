@@ -262,7 +262,8 @@ Each delivery attempt must record:
 - attempt number
 - timestamp
 - HTTP status code
-- response time (ms)
+- duration (ms) — elapsed time from claim to outcome, including connect,
+  DNS, and TLS time. Never NULL; every attempt has a measurable duration.
 - error message + error type
 - request and response headers
 
@@ -459,6 +460,25 @@ Rules:
 
 **Tradeoff:** v1 keeps TTL cleanup in the dispatcher to avoid running a fourth process. If cleanup load grows, extract into a dedicated maintenance worker — the dispatcher's job is delivery scheduling, not housekeeping.
 
+**Required.** `Idempotency-Key` is required on `POST /v1/events`. A request
+without the header returns `422 Unprocessable Entity` with a Problem
+Details body naming the missing header. There is no "unprotected"
+ingestion path — the design assumes the client always wants deduplication
+across retries.
+
+**Concurrent duplicate keys.** The unique constraint on
+`(tenant_id, idempotency_key)` is the gate. When two concurrent requests
+carry the same key, one INSERT succeeds; the other hits a unique-violation.
+The loser rolls back its aborted transaction, reads the winning idempotency
+row in a fresh transaction, and returns the same `202 Accepted` with the
+winner's `event_id`. It never returns an error for a legitimate concurrent
+retry.
+
+The implementation uses `INSERT ... ON CONFLICT (tenant_id,
+idempotency_key) DO NOTHING RETURNING id`. If the RETURNING is empty, the
+row already exists — a second SELECT fetches it. This avoids the
+aborted-transaction problem entirely: no unique violation is raised.
+
 ---
 ## 8. Webhook Signing
 Every outgoing webhook includes a signature.
@@ -541,21 +561,37 @@ Defaults:
 Implementation: Redis sliding window per API key and per tenant.
 
 When the limit is exceeded:
-```http
+
+```
 HTTP/1.1 429 Too Many Requests
-Retry-After: 30
+Retry-After: 17
 X-RateLimit-Limit: 100
 X-RateLimit-Remaining: 0
 X-RateLimit-Reset: 1720000030
 ```
 
+`Retry-After` is computed dynamically: the seconds until the oldest
+request in the current sliding window expires. It is never a fixed
+constant. `X-RateLimit-Reset` is the Unix timestamp when the window
+resets to zero.
+
 Limits are configurable per tenant. Per-endpoint limits do not apply to the API surface — they would apply to *outbound* deliveries, which is a different mechanism.
+
+In v1, per-tenant limits are read from the `tenants` table (added in
+Stage 2) and updated by an operator via direct database access. A
+self-service `PATCH /v1/tenants/me/rate-limits` endpoint is deferred
+(§18.1 item 21).
 
 **Atomicity:** the sliding-window check-and-increment must be a single Redis operation — a Lua script (`EVAL`/`EVALSHA`) or an equivalent atomic mechanism such as `MULTI`/`EXEC`. Never check-then-increment as two round trips; two concurrent requests can both see "under limit" and both increment.
 
 An integration test fires N+1 concurrent requests against a limit of N and asserts at most N are accepted within the window. Excess requests receive `429` with `Retry-After` and rate-limit headers.
 
 **Config validation**: at startup, the process rejects the configuration if `DEFAULT_API_KEY_RATE_LIMIT > DEFAULT_TENANT_RATE_LIMIT` unless `ALLOW_INVERTED_RATE_LIMITS=true`. A per-key limit larger than the tenant limit is almost always a misconfiguration.
+
+Rate limiting applies to `/v1/*` only. `/health/live`, `/health/ready`,
+and `/metrics` are exempt: they are consumed by infrastructure (load
+balancers, orchestrators, Prometheus) at fixed intervals and must not be
+throttled.
 
 ---
 ## 11. Delivery History
@@ -573,6 +609,7 @@ Response:
   "status": "dead_letter",
   "attempt_count": 3,
   "last_status_code": 503,
+  "last_duration_ms": 342,
   "next_retry_at": null,
   "created_at": "2026-08-18T15:30:00Z"
 }
@@ -630,8 +667,10 @@ WHERE d.id = :delivery_id
 RETURNING d.*;
 ```
 If `0 rows` returned: `409 Conflict` (Problem Details) with `detail='endpoint deleted or delivery not in dead_letter'`.
-- **Reset** `attempt_count` = 0 (start a new retry cycle).
-- Preserve all historical `delivery_attempts` rows — total attempts remain available as `COUNT(delivery_attempts)`.
+- **Reset** `deliveries.attempt_count` = 0 (start a new retry cycle).
+- Preserve all historical `delivery_attempts` rows. Their `attempt_number`
+  is monotonic and never resets — the next attempt continues the sequence.
+- `COUNT(delivery_attempts)` remains the total attempts across all cycles.
 - Set `status = 'pending'`, `next_attempt_at = now()`, clear `lease_token`.
 - `LPUSH` to Redis (best-effort).
 - Return `202 Accepted`.
@@ -689,6 +728,17 @@ updated_at        TIMESTAMPTZ
 
 **Delete semantics**: `DELETE /v1/endpoints/{id}` sets `status='deleted'` and `deleted_at=now()`. Rows are never hard-deleted. Delivery history for the endpoint remains queryable for audit.
 
+**Endpoint updates and in-flight deliveries.** `PATCH /v1/endpoints/{id}`
+changes the URL and rotates the description; the secret is not changed by
+PATCH (a future secret rotation endpoint is deferred, §18.1 item 11). A
+`pending` delivery uses whatever `endpoints.url` and
+`endpoints.secret_encrypted` hold at the moment the worker claims it. If
+the URL is patched after a delivery is created but before it is claimed,
+the delivery goes to the new URL.
+
+This is the live-config pattern: the tenant's latest configuration wins.
+Snapshotting the URL and secret per delivery is deferred (§18.1 item 19).
+
 **What happens to deliveries of a deleted endpoint**:
 
 - `pending` **deliveries that have not been claimed** are transitioned to `dead_letter` with `last_error = 'endpoint deleted'`. No further HTTP attempts are made.
@@ -700,6 +750,12 @@ updated_at        TIMESTAMPTZ
 - `GET /v1/endpoints` excludes `deleted` by default; `?include_deleted=true` returns them.
 
 - Recreating an endpoint with the same URL yields a new `id`; history is not merged.
+
+A `deleted` endpoint cannot be reactivated. `PATCH /v1/endpoints/{id}` on
+a deleted endpoint returns `404 Not Found`. The tenant creates a new
+endpoint if they want delivery to resume. This prevents accidental
+resurrection of an endpoint whose delivery history the tenant already
+audited as closed.
 
 ### events
 ```text
@@ -741,9 +797,9 @@ CREATE TYPE delivery_status AS ENUM ('pending','in_progress','success','dead_let
 id                UUID PK
 tenant_id         UUID FK -> tenants(id)
 delivery_id       UUID FK -> deliveries(id)
-attempt_number    INT
+attempt_number    INT              -- monotonic per delivery; never resets
 status_code       INT NULL
-response_time_ms  INT NOT NULL    -- every attempt has an elapsed duration
+duration_ms       INT NOT NULL    -- elapsed time of the attempt
 error             TEXT NULL
 error_type        TEXT NULL       -- 'timeout' | 'connect' | 'http' | 'dns' | 'ssrf' | 'response_too_large'
 request_headers   JSONB           -- sensitive keys redacted before storage
@@ -766,6 +822,12 @@ X-Webhook-Signature-Version
 
 **Why allowlist, not denylist**: a denylist assumes every future sensitive header is known in advance. It isn't. An allowlist fails closed — a new auth header introduced by a client or by a future HTTP spec is simply not stored, never leaks. Cost: less debugging signal for exotic headers.
 
+**attempt_number invariant.** `delivery_attempts.attempt_number` is a
+monotonic counter per delivery. It never resets, not even when
+`deliveries.attempt_count` is reset by manual retry. The next attempt
+after a manual retry continues the sequence: attempt 9 after attempts
+1–8, not attempt 1 again. `UNIQUE (delivery_id, attempt_number)` stays
+valid across cycles.
 
 ### idempotency_keys
 
@@ -809,7 +871,7 @@ ALTER TABLE api_keys
 ALTER TABLE delivery_attempts
   ADD CONSTRAINT attempts_delivery_number_unique  UNIQUE (delivery_id, attempt_number),
   ADD CONSTRAINT attempts_number_pos              CHECK (attempt_number > 0),
-  ADD CONSTRAINT attempts_response_time_nonneg    CHECK (response_time_ms >= 0);
+  ADD CONSTRAINT attempts_duration_nonneg         CHECK (duration_ms >= 0);
 
 ```
 
@@ -982,6 +1044,52 @@ gunicorn -k uvicorn.workers.UvicornWorker -w 2 app.main:app
 ### Migrations
 Run `alembic upgrade head` as a separate deploy step. Do not run on API startup.
 
+### API statement timeout
+
+Every API database session sets `statement_timeout = 10s`. A slow query —
+lock wait, checkpoint, bad plan — cannot hold an API worker indefinitely.
+The exception surfaces as a `503 Service Unavailable` with a request ID so
+the client can retry. The exact timeout is configurable via `API_STATEMENT_TIMEOUT_MS`.
+
+The global exception handler maps `QueryCanceled` / statement-timeout
+errors to `503 Service Unavailable`; every other unhandled exception
+remains a `500`.
+
+### Request size limit
+
+Every route enforces `MAX_REQUEST_BYTES` (default 1 MiB) at HTTP ingress
+before parsing. Requests with `Content-Length` above the limit return
+`413 Payload Too Large` without reading the body. This is separate from
+`MAX_PAYLOAD_BYTES`, which bounds the event payload inside the JSON body
+to protect the database.
+
+### Content-Type enforcement
+
+JSON endpoints require `Content-Type: application/json`. A request with a
+different content type returns `415 Unsupported Media Type`. Parsing uses
+the raw body; charset parameters are ignored beyond `utf-8`.
+
+### Transport security
+
+The API is served over HTTPS in any environment where it accepts traffic
+from outside the local Docker network. TLS terminates at the load balancer
+or reverse proxy; the application trusts `X-Forwarded-Proto` to identify
+client scheme.
+
+When `ENVIRONMENT=prod`, every request must arrive with
+`X-Forwarded-Proto: https`. A request with a different scheme returns
+`421 Misdirected Request`. The check runs in middleware, not at startup —
+a process behind a proxy cannot know at startup whether the proxy is
+terminating TLS.
+
+### Proxy headers
+
+The API trusts `X-Forwarded-For` and `X-Forwarded-Proto` when
+`ENVIRONMENT=prod`. Development and test environments ignore these
+headers so a local client cannot spoof its origin. Only the first
+address in `X-Forwarded-For` is trusted; multi-hop proxies are not
+supported in v1.
+
 ### Request correlation
 Four identifiers, distinct roles:
 
@@ -1006,6 +1114,7 @@ The following are **never** logged, at any level, by any process:
 - Request or response bodies
 - `SECRET_ENCRYPTION_KEY` or any HMAC secret material
 - Correlation IDs (`request_id`, `event_id`, `delivery_id`, `attempt_id`) are safe and expected in every log line.
+
 
 ---
 ## 16. Project Structure
@@ -1135,6 +1244,9 @@ hookdaemon/
 
 
 ### .env.example
+
+The block below is the target file. Settings under `# --- Planned ---` are
+not yet read by the application.
 ```text
 # --- Core ---
 APP_NAME=hookdaemon
@@ -1150,10 +1262,14 @@ DB_MAX_OVERFLOW=10
 DB_POOL_PRE_PING=true
 DB_POOL_RECYCLE=1800
 
+# --- API ---
+API_STATEMENT_TIMEOUT_MS=10000
+
 # --- Redis ---
 REDIS_URL=redis://localhost:6379/0
 
 # --- Planned ---
+MAX_REQUEST_BYTES=1048576
 SECRET_ENCRYPTION_KEY=<fernet key>
 MAX_PAYLOAD_BYTES=262144
 DELIVERY_TIMEOUT_SECONDS=15
@@ -1232,6 +1348,20 @@ Integration tests invoke `devdb start` and parse `DATABASE_URL` from stdout, the
 ✓ Retry cycle: 8 auto attempts → dead_letter; manual retry resets attempt_count=0 → attempt 9 runs; delivery_attempts has 9+ rows
 ```
 
+### Contract tests
+
+```text
+✓ POST /v1/events without Idempotency-Key → 422
+✓ POST /v1/events with wrong Content-Type → 415
+✓ POST /v1/events with body > MAX_REQUEST_BYTES → 413
+✓ PATCH /v1/endpoints/{id} on deleted endpoint → 404
+✓ GET /v1/events without Authorization → 401
+✓ GET /v1/events with a revoked API key → 401
+✓ In prod, request without X-Forwarded-Proto: https → 421
+✓ GET /health/live at >100 req/min → 200 (rate limit exempt)
+✓ POST /v1/events >100 req/min → 429 with dynamic Retry-After
+```
+
 ### Security tests
 
 SSRF — verify each is blocked and reported as an `ssrf` attempt:
@@ -1291,24 +1421,134 @@ Integration test sequence:
 ---
 
 ## 18. Future Work
-Deferred enhancements. Not planned for v1, not rejected — prioritized after core system is deployed.
 
+### 18.1 Deferred
 
-1. **Per-endpoint concurrency limit** — cap in-flight deliveries to a single destination to avoid overloading slow receivers.
-2. **Webhook pause / resume** — reintroduce a `paused` endpoint status with `POST /v1/endpoints/{id}/pause` and `/resume`.
+Enhancements considered for the product but not scheduled. Not rejected —
+candidates for prioritization after deployment.
+
+1. **Per-endpoint concurrency limit** — cap in-flight deliveries to a
+   single destination to avoid overloading slow receivers.
+2. **Webhook pause / resume** — reintroduce a `paused` endpoint status
+   with `POST /v1/endpoints/{id}/pause` and `/resume`.
 3. **Scheduled delivery** — `deliver_at` field on event creation.
-4. **Delivery dashboard (React)** — total events, successful deliveries, failed, retry rate, average latency.
-5. OpenTelemetry tracing
-6. Circuit breaker per endpoint
-7. Admin CLI (`webhook-cli retry`, `webhook-cli dlq list`)
-8. AWS deployment (RDS + ElastiCache + ECS Fargate + Terraform)
+4. **Delivery dashboard (React)** — total events, successful deliveries,
+   failed, retry rate, average latency.
+5. **OpenTelemetry tracing** — SDK, exporter, and context propagation
+   across API → dispatcher → Redis → worker → outbound HTTP. Requires a
+   collector endpoint and a sampling policy.
+6. **Circuit breaker per endpoint** — cross-request state per destination
+   with open / half-open / closed transitions. Addresses repeated failure
+   to the same receiver before backoff fully engages.
+7. **Admin CLI** — `webhook-cli retry`, `webhook-cli dlq list`.
+8. **AWS deployment** — RDS, ElastiCache, ECS Fargate, Terraform.
+9. **Per-endpoint FIFO ordering** — sequencing state per endpoint;
+   introduces head-of-line blocking on failure.
+10. **Retention policy** — scheduled deletion or partition-and-archive
+    of old events, deliveries, and delivery attempts.
+11. **Secret rotation with grace period** — two active secrets per
+    endpoint; receivers accept either during a transition window.
+12. **Queue-depth admission control** — return `429 Too Many Requests` from
+    `POST /v1/events` when `deliveries.pending` exceeds a threshold. Prevents
+    an event burst from growing the queue unbounded.
+13. **Per-phase attempt timing** — split `duration_ms` into `connect_ms`,
+    `tls_ms`, and `response_ms` to match OpenTelemetry HTTP semantic
+    conventions. Revisit when Stage 4 observability work defines which
+    durations matter for bottleneck diagnosis.
+14. **TLS between API and Postgres/Redis** — `sslmode=verify-full` for
+    Postgres; `rediss://` for Redis. Not added to local Compose (extra
+    cert management for no local threat model), but required for any
+    deployment to a shared network. Stage 4 deployment work covers this.
+15. **Asymmetric signing (Ed25519)** — sign with a private key; receivers
+    verify with a public key from a JWKS endpoint. Removes the shared-secret
+    requirement but adds key distribution and rotation. HMAC remains the
+    industry default (Stripe, GitHub, Shopify, Svix). Revisit if a customer
+    requires asymmetric verification.
+16. **Event schema versioning** — a `schema_version` field on events,
+    separate from `event_type`. The current design supports versioning by
+    convention: tenants embed the version in `event_type` (e.g.
+    `order.created.v2`). A dedicated field is deferred until a use case
+    requires it.
+17. **Payload redaction / PII scrubbing** — per-tenant rules that strip
+    or encrypt named fields in `events.payload` before persistence. Related
+    to retention (item 10) but a distinct feature: retention deletes old
+    rows; redaction alters new ones. Deferred until a compliance use case
+    requires it.
+18. **Response body storage on delivery attempts** — a `response_body TEXT`
+    column on `delivery_attempts`, truncated at 8 KB. Enables debugging a
+    failing receiver without asking the customer for their logs. Deferred
+    because §15's log secrecy policy currently excludes response bodies
+    from any persistent record.
+19. **Endpoint snapshotting per delivery** — a `endpoint_url_snapshot` and
+    `endpoint_secret_encrypted_snapshot` on `deliveries`, captured at
+    creation, so retries use the URL and secret from when the event was
+    accepted. The current design uses live config; snapshotting
+    is a valid alternative for tenants who rotate endpoints frequently.
+20. **Worker heartbeat in Postgres** — a `worker_heartbeats` table
+    (`worker_id TEXT PK`, `last_seen TIMESTAMPTZ`) written alongside the
+    Redis heartbeat. Redis-only heartbeat means a Redis outage makes
+    worker health unobservable. Deferred because the current design's
+    readiness body already reports the ambiguity.
+21. **Per-tenant rate-limit endpoint** — `PATCH /v1/tenants/me/rate-limits`
+    (admin key required) to update `api_key_rate_limit` and
+    `tenant_rate_limit` without operator intervention. Deferred because
+    v1 has no tenant self-service surface; limits are set at bootstrap and
+    updated via the database.
 
+### 18.2 Rejected approaches
+
+Considered and rejected. Not deferred — decided against. Listed so the
+boundary is not re-litigated on review.
+
+- **Per-endpoint FIFO ordering** — contradicts §19 "No ordering
+  guarantee." FIFO introduces head-of-line blocking: a failed delivery to
+  endpoint A blocks every later delivery to A until it succeeds or
+  dead-letters. The current design allows parallel deliveries to the same
+  endpoint and relies on receivers deduplicating on `X-Webhook-ID`.
+
+- **Kafka / NATS / external broker** — Postgres is the queue. Redis is a
+  wake-up signal. Adding a broker replaces the distributed-systems work
+  the project exists to demonstrate (SKIP LOCKED claiming, lease tokens,
+  at-least-once semantics) with infrastructure configuration.
+
+- **Celery / RQ / task-queue framework** — dispatcher and worker are
+  small, explicit processes. A framework would hide the state transitions
+  this project is built to expose.
+
+- **Exactly-once delivery** — impossible without receiver cooperation.
+  At-least-once plus receiver deduplication is the industry norm (Stripe,
+  GitHub, Shopify). Documented in §19.
+
+- **Synchronous in-API delivery** — the API must not block on a slow
+  receiver. Delivery is asynchronous by design. See §3.
+
+- **Multi-region active-active** — not needed at the target scale; adds
+  cross-region consistency requirements the architecture does not solve.
+
+- **Auto-scaling worker pool** — queue depth is not yet a bottleneck;
+  scaling is manual via `WORKER_COUNT`. Revisit after Stage 4 load tests
+  produce real numbers.
+
+- **Transactional outbox pattern** — Postgres already holds the delivery
+  row before the wake-up signal is sent. If the wake-up fails, the
+  dispatcher poll picks up the row within 5 seconds. An outbox table plus
+  a relay or CDC pipeline would duplicate state for no reliability gain.
+
+- **Postgres LISTEN/NOTIFY instead of polling** — LISTEN/NOTIFY requires
+  a long-lived dedicated connection, does not survive reconnects, and
+  breaks under PgBouncer in transaction mode. Polling every 5 seconds on
+  an indexed `deliveries` table is negligible load at target scale and is
+  durable by construction.
 
 ---
 
 ## 19. Known Limitations
 
-This system is production-style, not production-ready. Honest boundaries:
+This system is production-style, not production-ready. The following are
+honest boundaries of the current design, not defects. Approaches that were
+considered and rejected live in §18.2.
+
+Honest boundaries:
 
 - **No exactly-once delivery.** Delivery is at-least-once. Receivers must be idempotent on their side using `X-Webhook-ID`.
 - **No ordering guarantee.** Deliveries to the same endpoint may arrive out of order after retries.
@@ -1317,7 +1557,9 @@ This system is production-style, not production-ready. Honest boundaries:
 - **Redis is a signal, not a queue.** With Redis unavailable, workers fall back to polling Postgres on a 5-second interval; delivery continues but wake-up latency degrades.
 - **No horizontal scaling of Postgres.** `SKIP LOCKED` scales workers, not the database.
 - **Rate limiting is per API key and per tenant (inbound).** Outbound destination throttling is not implemented.
-- **No TLS between API and Postgres/Redis in v1.** Local Docker Compose has no transport encryption. Production deployment should enable Postgres TLS and Redis TLS where supported.
+- **No TLS between API and Postgres/Redis in v1.** Local Docker Compose
+  has no transport encryption. The deployment target must enable Postgres
+  `sslmode=verify-full` and Redis `rediss://`. See §18.1 item 14.
 - **Secrets at rest use Fernet with a single static key.** Rotation is manual: decrypt all `endpoints.secret_encrypted` values with the old key, re-encrypt with the new key in a single transaction, then retire the old key. Production would use KMS envelope encryption with per-record data keys so rotation is per-record, not fleet-wide.
 - **No admission control.** When `deliveries.pending` grows faster than workers drain it, the queue grows unbounded. At this scale, the operator scales workers or adds endpoint-level throttling. There is no queue-depth cap or automatic shedding.
 - **No multi-region.** Single deployment region.
