@@ -44,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   initial migration; `/health/ready` returns `200` once it is applied
 - `/metrics` endpoint exposing Prometheus metrics in text exposition
   format (Python process and GC metrics from the default registry)
+- `API_STATEMENT_TIMEOUT_MS` setting declares the per-session Postgres
+  `statement_timeout`; enforcement lands with the ingestion routes
 
 ### Changed
 
