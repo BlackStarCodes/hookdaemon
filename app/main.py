@@ -11,6 +11,7 @@ from app.api.v1.health import router as health_router
 from app.api.v1.router import api_router
 from app.config import get_settings
 from app.core.logging import get_logger, setup_logging
+from app.core.metrics import router as metrics_router
 from app.core.middleware import RequestIDMiddleware
 from app.db import engine
 
@@ -42,6 +43,7 @@ app = FastAPI(
 )
 # Probes live at root: /health/live, /health/ready.
 app.include_router(health_router)
+app.include_router(metrics_router)
 # Business endpoints live under /v1/*.
 app.include_router(api_router)
 
