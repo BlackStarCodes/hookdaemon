@@ -118,6 +118,8 @@ docker compose up -d
 | Swagger | http://localhost:8000/docs |
 | Health (liveness) | http://localhost:8000/health/live |
 | Health (readiness) | http://localhost:8000/health/ready |
+| Metrics | http://localhost:8000/metrics |
+
 
 `/health/ready` returns `503` until the database is migrated in the next step.
 
@@ -163,8 +165,8 @@ Target stack. Rows marked † are planned and not yet installed.
 | Queue / cache † | Redis (wake-up signal + rate limiting) |
 | HTTP client † | httpx |
 | Logging | structlog (JSON) |
-| Metrics † | prometheus-client |
-| Serving † | uvicorn (gunicorn + uvicorn workers at deploy) |
+| Metrics | prometheus-client |
+| Serving | uvicorn (gunicorn + uvicorn workers at deploy) |
 | Tests | pytest (unit + integration) |
 | Test infra | [DevDB](https://github.com/BlackStarCodes/devdb) for ephemeral Postgres |
 | Lint / types | ruff + mypy (strict), enforced via pre-commit |
@@ -174,7 +176,7 @@ Target stack. Rows marked † are planned and not yet installed.
 ## Repository layout
 
 ```text
-app/            FastAPI app (api/, core/, config.py, db.py, main.py)
+app/            FastAPI app (api/, core/, models/, config.py, db.py, main.py)
 alembic/        Database migrations
 tests/          Unit tests
 ```

@@ -42,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   providing database-set `created_at` and `updated_at`
 - Alembic autogenerate wiring (`target_metadata = Base.metadata`) and the
   initial migration; `/health/ready` returns `200` once it is applied
+- `/metrics` endpoint exposing Prometheus metrics in text exposition
+  format (Python process and GC metrics from the default registry)
 
 ### Changed
 
