@@ -149,6 +149,7 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 | `DB_MAX_OVERFLOW` | Additional connections allowed (0–100) | No | `10` |
 | `DB_POOL_PRE_PING` | Verify pooled connections before use | No | `true` |
 | `DB_POOL_RECYCLE` | Recycle pooled connections after this many seconds (0 disables) | No | `1800` |
+| `API_STATEMENT_TIMEOUT_MS` | Per-session Postgres `statement_timeout` in milliseconds | No | `10000` |
 
 Additional settings are added as features ship.
 

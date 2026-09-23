@@ -44,6 +44,9 @@ class Settings(BaseSettings):
         "in-use connections.",
     )
 
+    # --- API ---
+    api_statement_timeout_ms: int = 10_000
+
     # --- Redis ---
     redis_url: str = "redis://localhost:6379/0"
 
