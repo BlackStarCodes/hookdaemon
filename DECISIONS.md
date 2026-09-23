@@ -22,6 +22,7 @@ Newest first.
 | 10 | The initial migration is empty; it stamps `alembic_version` only | Accepted | 2026-09-22 |
 
 ---
+
 ### ADR-010 — The initial migration is empty; it stamps `alembic_version` only
 
 **Status:** Accepted
@@ -48,9 +49,10 @@ that introduce their models.
 
 **Alternatives considered**
 - Create `tenants` in the initial migration — rejected: couples the
-  readiness signal to Week 2 work.
+  readiness signal to later domain work.
 - Skip the initial revision; rely on `alembic_version` existing when the
-  first real migration runs — rejected: readiness stays `503` until Week 2.
+  first real migration runs — rejected: readiness stays `503` until the first domain migration lands.
+
 ---
 
 ### ADR-009 — Health probes are registered at root, not under `/v1`

@@ -1146,7 +1146,6 @@ LOG_JSON=true
 # --- Database ---
 DATABASE_URL=postgresql+asyncpg://hookdaemon:hookdaemon@localhost:5432/hookdaemon  # pragma: allowlist secret
 DB_POOL_SIZE=5
-DB_POOL_SIZE=5
 DB_MAX_OVERFLOW=10
 DB_POOL_PRE_PING=true
 DB_POOL_RECYCLE=1800

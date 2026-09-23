@@ -3,7 +3,7 @@
 **Timeline:** 8 weeks part-time (~15–20 hrs/week).
 **Deadline:** Week 8 = deployed and demoed.
 
-**Current week:** 1 — API skeleton. Config, structured logging, request_id middleware, database engine, Alembic scaffolding, and health endpoints are in place. Initial schema migration and `/metrics` are in progress.
+**Current week:** 1 — API skeleton. Config, structured logging, request_id middleware, database engine, Alembic scaffolding, health endpoints, initial schema migration, and `/metrics` are all in place.
 
 
 
